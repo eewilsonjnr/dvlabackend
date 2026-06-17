@@ -1,0 +1,25 @@
+import { Router } from 'express';
+import authRoutes       from './auth';
+import applicantRoutes  from './applicants';
+import permitRoutes     from './permits';
+import printRoutes      from './print';
+import rfidRoutes       from './rfid';
+import qcRoutes         from './qc';
+import dashboardRoutes  from './dashboard';
+import adminRoutes      from './admin';
+import centreRoutes     from './centres';
+import reportsRoutes    from './reports';
+
+const router = Router();
+router.use('/auth',       authRoutes);
+router.use('/applicants', applicantRoutes);
+router.use('/permits',    permitRoutes);
+router.use('/print-jobs', printRoutes);
+router.use('/rfid',       rfidRoutes);
+router.use('/qc',         qcRoutes);
+router.use('/dashboard',  dashboardRoutes);
+router.use('/admin',      adminRoutes);
+router.use('/centres',    centreRoutes);
+router.use('/reports',    reportsRoutes);
+router.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+export default router;

@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============= DVLA OFFICE HIERARCHY =============
+// Three tiers: HEAD_OFFICE (1) → REGIONAL_CENTRE (16) → DISTRICT_OFFICE (n)
+
+enum OfficeType {
+  HEAD_OFFICE
+  REGIONAL_CENTRE
+  DISTRICT_OFFICE
+}
+
+model DvlaOffice {
+  id                String      @id @default(uuid())
+  name              String
+  type              OfficeType
+  regionName        String?     // e.g. "Greater Accra Region"
+  town              String?     // e.g. "Accra"
+  address           String?
+  phone             String?
+  placeOfIssueLabel String?     // printed on permits, e.g. "DVLA — Accra"
+  printerName       String?     // assigned printer name for this office
+  isActive          Boolean     @default(true)
+  parentOfficeId    String?
+  parentOffice      DvlaOffice? @relation("OfficeHierarchy", fields: [parentOfficeId], references: [id])
+  childOffices      DvlaOffice[] @relation("OfficeHierarchy")
+  adminUsers        AdminUser[]
+  permits           Permit[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([type, isActive])
+  @@index([parentOfficeId])
+}
+
+// ============= USER & ROLE MANAGEMENT =============
+
+model Role {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  description String?
+  isSystem    Boolean     @default(false)
+  permissions Permission[]
+  adminUsers  AdminUser[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  roles       Role[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AdminUser {
+  id                  String      @id @default(uuid())
+  email               String      @unique
+  password            String
+  firstName           String
+  lastName            String
+  phone               String?
+  notificationEmail   String?                  // email address where OTP codes are sent
+  dvlaRole            String      @default("Operator") // Operator, Administrator, Supervisor
+  isActive            Boolean     @default(true)
+  roleId              String
+  role                Role        @relation(fields: [roleId], references: [id])
+  mfaSecret           String?
+  mfaEnabled          Boolean     @default(false)
+  emailOtpCode        String?                  // current one-time code (hashed)
+  emailOtpExpiresAt   DateTime?               // expiry for the above code
+  officeId            String?
+  office              DvlaOffice? @relation(fields: [officeId], references: [id])
+  auditLogs           AuditLog[]
+  permits             Permit[]    @relation("PermitCreatedBy")
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+}
+
+// ============= APPLICANTS =============
+
+model Applicant {
+  id            String   @id @default(uuid())
+  surname       String
+  otherNames    String
+  placeOfBirth  String?
+  dateOfBirth   String?
+  homeAddress   String?
+  signatureUrl  String?
+  nationalId    String?  @unique
+  licenceNumber String?  @unique
+  photoUrl      String?
+  permits       Permit[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ============= PERMITS =============
+
+model Permit {
+  id              String      @id @default(uuid())
+  permitType      String      // IDP, ICMV
+  applicantId     String
+  applicant       Applicant   @relation(fields: [applicantId], references: [id])
+  referenceNumber String      @unique
+  status          String      @default("draft") // draft, submitted, approved, rejected, printed, issued
+  operatorId      String?
+  operator        AdminUser?  @relation("PermitCreatedBy", fields: [operatorId], references: [id])
+  officeId        String?
+  issuingOffice   DvlaOffice? @relation(fields: [officeId], references: [id])
+  rejectionReason String?
+
+  // IDP fields
+  placeOfIssue             String?
+  dateOfIssue              String?
+  dateOfExpiry             String?
+  classOfLicence           String?  // A, B, C, D, E, F
+  certificateOfCompetence  String?
+
+  // ICMV fields
+  ownerSurname        String?
+  ownerOtherNames     String?
+  ownerHomeAddress    String?
+  classOfVehicle      String?
+  makerOfChassis      String?
+  typeOfChassis       String?
+  serialNumber        String?
+  numberOfCylinders   String?
+  engineNumber        String?
+  stroke              String?
+  bore                String?
+  horsePower          String?
+  bodyShape           String?
+  bodyColour          String?
+  numberOfSeats       String?
+  weightUnladen       String?
+  weightLaden         String?
+  identificationMark  String?
+
+  // MRZ
+  mrzLine1 String?
+  mrzLine2 String?
+
+  // Booklet
+  bookletNumber String?
+
+  printJobs     PrintJob[]
+  rfidEncodings RfidEncoding[]
+  qcResults     QcResult[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([permitType, status])
+}
+
+// ============= PRINT JOBS =============
+
+model PrintJob {
+  id           String    @id @default(uuid())
+  permitId     String
+  permit       Permit    @relation(fields: [permitId], references: [id])
+  operatorId   String
+  status       String    @default("queued") // queued, printing, complete, error
+  printerName  String?
+  isReprint    Boolean   @default(false)
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  rfidEncoding RfidEncoding?
+  qcResult     QcResult?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status, createdAt])
+}
+
+// ============= RFID ENCODINGS =============
+
+model RfidEncoding {
+  id                  String    @id @default(uuid())
+  permitId            String
+  permit              Permit    @relation(fields: [permitId], references: [id])
+  printJobId          String?   @unique
+  printJob            PrintJob? @relation(fields: [printJobId], references: [id])
+  status              String    @default("pending") // pending, encoded, failed
+  chipSerialNumber    String?
+  verificationResult  String    @default("not_verified") // pass, fail, not_verified
+  verificationDetails String?
+  encodedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status, createdAt])
+}
+
+// ============= QC RESULTS =============
+
+model QcResult {
+  id                     String    @id @default(uuid())
+  permitId               String
+  permit                 Permit    @relation(fields: [permitId], references: [id])
+  printJobId             String?   @unique
+  printJob               PrintJob? @relation(fields: [printJobId], references: [id])
+  result                 String    @default("pending") // pass, fail, pending
+  rejectionReason        String?
+  opticalInspectionScore Float?
+  photoQualityScore      Float?
+  mrzValidation          Boolean   @default(false)
+  rfidValidation         Boolean   @default(false)
+  inspectedById          String?
+  inspectedAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([result, createdAt])
+}
+
+// ============= AUDIT LOGS =============
+
+model AuditLog {
+  id           String     @id @default(uuid())
+  userId       String?
+  user         AdminUser? @relation(fields: [userId], references: [id])
+  operatorName String?
+  applicantRef String?
+  action       String
+  outcome      String     @default("success") // success, failure, warning
+  details      String?
+  ipAddress    String?
+  hash         String?
+  createdAt    DateTime   @default(now())
+
+  @@index([action, createdAt])
+}
+
+// ============= SYSTEM CONFIG =============
+
+model SystemConfig {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String?
+  description String?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}

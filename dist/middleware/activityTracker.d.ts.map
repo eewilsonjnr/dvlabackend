@@ -1,0 +1,1 @@
+{"version":3,"file":"activityTracker.d.ts","sourceRoot":"","sources":["../../src/middleware/activityTracker.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,OAAO,EAAE,QAAQ,EAAE,YAAY,EAAE,MAAM,SAAS,CAAC;AAI1D,wBAAgB,cAAc,SAAiC;AAC/D,wBAAgB,mBAAmB,SAA2B;AAE9D,wBAAgB,eAAe,CAAC,GAAG,EAAE,OAAO,EAAE,GAAG,EAAE,QAAQ,EAAE,IAAI,EAAE,YAAY,GAAG,IAAI,CAGrF"}
