@@ -1,0 +1,53 @@
+name: Deploy pre-live (Hetzner)
+
+# Builds the backend image ON the Hetzner box via a self-hosted runner and
+# redeploys it. GitHub-hosted runners are not used (Actions minutes are over
+# quota); self-hosted runner minutes are free.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-prelive
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, dvla-prelive]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync source into deploy dir
+        run: |
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            --exclude 'uploads/' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            ./ /opt/dvla/backend/
+
+      - name: Sync compose file (Caddyfile is left untouched — it holds the basic-auth hash)
+        run: cp ./deploy/docker-compose.yml /opt/dvla/docker-compose.yml
+
+      - name: Build & deploy backend (migrations auto-apply via entrypoint)
+        working-directory: /opt/dvla
+        run: docker compose up -d --build backend
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 https://api.dvla.3dt.com.gh/health >/dev/null 2>&1; then
+              echo "✅ backend healthy"; exit 0
+            fi
+            echo "waiting for backend... ($i)"; sleep 3
+          done
+          echo "❌ backend health check failed"; cd /opt/dvla && docker compose logs backend --tail=60; exit 1
+
+      - name: Prune dangling images
+        if: always()
+        run: docker image prune -f

@@ -32,7 +32,16 @@ the server** (no CI/registry). See `deploy/docker-compose.yml` and `deploy/Caddy
 - `Dockerfile` builds the API image (`npm ci` → `prisma generate` → `tsc`); `entrypoint.sh` runs
   `prisma migrate deploy` then starts the server.
 - URLs: API → `https://api.dvla.3dt.com.gh`. Postgres + Mailpit are internal-only (not exposed).
-- Redeploy: re-sync source to the box and `docker compose up -d --build` (migrations auto-apply).
+
+## CI/CD (pre-live)
+
+Push to `master` auto-deploys via `.github/workflows/deploy-prelive.yml`, which runs on a
+**self-hosted GitHub Actions runner on the Hetzner box** (GitHub-hosted runners are over quota;
+self-hosted minutes are free). The workflow rsyncs the checkout into `/opt/dvla/backend`, copies
+`deploy/docker-compose.yml` to `/opt/dvla`, runs `docker compose up -d --build backend` (image
+built on the box), and health-checks `https://api.dvla.3dt.com.gh/health`. Migrations apply
+automatically via `entrypoint.sh`. Manual run: the workflow's "Run workflow" (workflow_dispatch).
+The Caddyfile on the box is never overwritten by CI (it holds the Mailpit basic-auth hash).
 
 ## Tooling
 
