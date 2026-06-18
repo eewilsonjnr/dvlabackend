@@ -13,13 +13,25 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
+    "db:deploy": "prisma migrate deploy",
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "prepare": "husky || true"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{js,mjs,cjs,json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -54,8 +66,14 @@
     "@types/qrcode": "^1.5.6",
     "@types/uuid": "^10.0.0",
     "dotenv": "^17.2.3",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0",
     "nodemon": "^3.1.11",
+    "prettier": "^3.4.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.20.0"
   }
 }

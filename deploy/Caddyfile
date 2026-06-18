@@ -1,0 +1,25 @@
+# DVLA IDP — pre-live reverse proxy with automatic HTTPS (Let's Encrypt).
+# DNS for *.dvla.3dt.com.gh already points at this server.
+{
+	email cloud.aaodoom@gmail.com
+}
+
+# Frontend (Next.js)
+dvla.3dt.com.gh {
+	reverse_proxy frontend:3000
+}
+
+# Backend API (Express) — also serves /uploads
+api.dvla.3dt.com.gh {
+	reverse_proxy backend:5000
+}
+
+# Mailpit web UI — protected by HTTP basic auth so captured emails aren't public.
+# Replace the hash below with the output of:
+#   docker run --rm caddy caddy hash-password --plaintext '<password>'
+mail.dvla.3dt.com.gh {
+	basic_auth {
+		mailadmin REPLACE_WITH_BCRYPT_HASH
+	}
+	reverse_proxy mailpit:8025
+}

@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.gitignore
+uploads
+.env
+.env.*
+deploy
+*.log
+.DS_Store
+.husky

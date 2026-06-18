@@ -1,0 +1,108 @@
+# DVLA IDP — pre-live stack
+#
+# Runtime layout on the server (/opt/dvla):
+#   docker-compose.yml   (this file, copied from backend/deploy/)
+#   Caddyfile            (copied from backend/deploy/)
+#   .env                 (secrets — generated on the box, NOT committed)
+#   backend/             (dvla_idp_backend source)
+#   frontend/            (dvla_idp_web source)
+#
+# Only Caddy is published to the host. Postgres and Mailpit stay on the
+# internal network and are never exposed publicly.
+name: dvla-idp
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+      - mailpit
+    networks:
+      - dvla
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - dvla
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 'true'
+      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
+      MP_MAX_MESSAGES: '5000'
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpit_data:/data
+    networks:
+      - dvla
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: '5000'
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      AUDIT_ENCRYPTION_KEY: ${AUDIT_ENCRYPTION_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dvla
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - backend
+    networks:
+      - dvla
+
+networks:
+  dvla:
+
+volumes:
+  pgdata:
+  mailpit_data:
+  caddy_data:
+  caddy_config:
+  uploads:
