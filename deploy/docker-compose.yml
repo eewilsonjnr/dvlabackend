@@ -54,6 +54,17 @@ services:
       MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
       MP_MAX_MESSAGES: '5000'
       MP_DATABASE: /data/mailpit.db
+      # Auto-relay: every captured message is ALSO delivered to its real recipient
+      # via an upstream SMTP server. Credentials come from .env (never committed).
+      MP_SMTP_RELAY_HOST: smtp.gmail.com
+      MP_SMTP_RELAY_PORT: '587'
+      MP_SMTP_RELAY_STARTTLS: 'true'
+      MP_SMTP_RELAY_AUTH: plain
+      MP_SMTP_RELAY_USERNAME: ${MAIL_RELAY_USERNAME}
+      MP_SMTP_RELAY_PASSWORD: ${MAIL_RELAY_PASSWORD}
+      # Gmail only accepts mail "from" the authenticated account, so rewrite the From.
+      MP_SMTP_RELAY_OVERRIDE_FROM: ${MAIL_RELAY_OVERRIDE_FROM}
+      MP_SMTP_RELAY_ALL: 'true'
     volumes:
       - mailpit_data:/data
     networks:
