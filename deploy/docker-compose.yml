@@ -102,11 +102,12 @@ services:
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
       # Object storage (MinIO, internal only) — app uploads live here.
+      # Uses a scoped service account (dvla-uploads bucket only), NOT the root creds.
       MINIO_ENDPOINT: minio
       MINIO_PORT: '9000'
       MINIO_USE_SSL: 'false'
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET}
     depends_on:
       postgres:
