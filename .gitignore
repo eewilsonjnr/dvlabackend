@@ -1,23 +1,26 @@
-# Dependencies
-node_modules/
+# Environment variables — never commit these
+.env
+.env.*
+.env.local
+.env.*.local
+!.env.example
 
 # Build output
 dist/
+build/
 
-# Environment files (never commit real secrets)
-.env
-.env.*
-!.env.example
-
-# Runtime uploads (user-generated; lives on a Docker volume in deployment)
-uploads/
-
-# Prisma generated client
-prisma/generated/
+# Dependencies
+node_modules/
 
 # Logs
 *.log
 npm-debug.log*
+
+# Uploads (user-generated; lives on a volume in deployment)
+uploads/
+
+# Prisma generated client
+prisma/generated/
 
 # OS / editor
 .DS_Store
