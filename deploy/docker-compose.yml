@@ -103,6 +103,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      # Server-side Next.js API routes reach the backend over the internal
+      # network (not the public URL). Checked before NEXT_PUBLIC_API_URL.
+      BACKEND_URL: http://backend:5000
     depends_on:
       - backend
     networks:
