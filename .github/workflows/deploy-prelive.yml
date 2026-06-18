@@ -1,24 +1,47 @@
-name: Deploy pre-live (Hetzner)
+name: CI/CD pre-live (Hetzner)
 
-# Builds the backend image ON the Hetzner box via a self-hosted runner and
-# redeploys it. GitHub-hosted runners are not used (Actions minutes are over
-# quota); self-hosted runner minutes are free.
+# Builds ON the Hetzner box via a self-hosted runner (GitHub-hosted runners are
+# over quota; self-hosted minutes are free).
+#   - pull_request -> `build` job validates the image compiles (gates merges)
+#   - push to master / manual -> `deploy` job builds + redeploys on the box
 
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-backend-prelive
-  cancel-in-progress: false
+  group: cicd-backend-prelive-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Merge gate: only builds the image, never touches the running stack.
+  build:
+    name: build
+    if: github.event_name == 'pull_request'
     runs-on: [self-hosted, dvla-prelive]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Build image (validation only — no deploy)
+        run: docker build -t dvla-backend-ci:${{ github.sha }} .
+
+      - name: Clean up CI image
+        if: always()
+        run: |
+          docker rmi dvla-backend-ci:${{ github.sha }} 2>/dev/null || true
+          docker image prune -f
+
+  deploy:
+    name: deploy
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, dvla-prelive]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Sync source into deploy dir
         run: |
