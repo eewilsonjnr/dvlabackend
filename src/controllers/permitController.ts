@@ -210,12 +210,14 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
     }
 
     // Physical page dimensions (1cm = 28.346pt)
-    // IDP: booklet opened flat → single spread 17.6cm × 12.5cm (two 8.8cm halves)
+    // IDP: booklet inserted vertically → portrait 12.5cm × 17.6cm
+    //   Top half (y: 0 → PH) is blank (facing-down page), bottom half printed.
     // ICMV: single page 8.8cm × 12.5cm
     const CM = 28.346;
-    const PW = 8.8 * CM; // single page width
-    const H = 12.5 * CM; // page height
-    const W = permit.permitType === 'IDP' ? PW * 2 : PW; // spread for IDP
+    const PH = 8.8 * CM; // single booklet page height
+    const PW = 12.5 * CM; // single booklet page width (becomes doc width in portrait)
+    const W = PW;
+    const H = permit.permitType === 'IDP' ? PH * 2 : PH; // portrait spread for IDP
 
     const doc = new PDFDocument({
       size: [W, H],
@@ -237,10 +239,11 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
       const PAD = 0.55 * CM;
       const VPAD = 3.4 * CM;
 
-      // For IDP spread: left half starts at x=0, right half starts at x=PW
-      const drawBorder = (offsetX = 0) =>
+      // For IDP portrait spread: top half (y:0→PH) blank, bottom half (y:PH→2×PH) printed.
+      // drawBorder draws the border of the printed booklet page at the given y offset.
+      const drawBorder = (offsetY = 0) =>
         doc
-          .rect(offsetX + 0.5, 0.5, PW - 1, H - 1)
+          .rect(0.5, offsetY + 0.5, W - 1, PH - 1)
           .strokeColor('#CCCCCC')
           .lineWidth(0.5)
           .stroke();
@@ -394,24 +397,26 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
         // ICMV is a single-page document
       } else {
         // ══════════════════════════════════════════════════════════════════════
-        // IDP — two print passes, each on an opened spread (17.6cm × 12.5cm)
-        // Each pass: left half is blank, content prints on RIGHT half only.
+        // IDP — two print passes, booklet inserted vertically (portrait).
+        // Each PDF page is 12.5cm wide × 17.6cm tall.
+        // Top half (y: 0 → PH) is blank (facing-down page).
+        // Content prints on BOTTOM half (y: PH → 2×PH) only.
         //
-        // Pass 1 (page 1): right half = driver particulars (photo, name, DOB…)
-        // Pass 2 (page 2): right half = issue details (place, dates, class…)
+        // Pass 1 (page 1): bottom half = driver particulars (photo, name, DOB…)
+        // Pass 2 (page 2): bottom half = issue details (place, dates, class…)
         // ══════════════════════════════════════════════════════════════════════
 
-        // Content always starts at PW (right half offset)
-        const OX = PW;
-        const valueWidth = PW - VPAD - PAD;
+        // Content y-offset = PH (bottom half of portrait spread)
+        const OY = PH;
+        const valueWidth = W - VPAD - PAD;
 
-        // ── Pass 1: Driver particulars on right half ───────────────────────
-        drawBorder(OX);
+        // ── Pass 1: Driver particulars on bottom half ──────────────────────
+        drawBorder(OY);
 
         const photoW = 3.8 * CM;
         const photoH = 4.7 * CM;
-        const photoX = OX + (PW - photoW) / 2; // centred within right half
-        const photoY = 1.6 * CM;
+        const photoX = (W - photoW) / 2; // centred horizontally
+        const photoY = OY + 1.6 * CM; // 1.6cm from top of printed area
         drawPhoto(photoX, photoY, photoW, photoH);
 
         const firstLineY = photoY + photoH + 0.4 * CM;
@@ -436,14 +441,14 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
             currentY += lineSpacing;
             return;
           }
-          writeValue(value, OX + VPAD, currentY, valueWidth);
+          writeValue(value, VPAD, currentY, valueWidth);
         });
 
-        // ── Pass 2: Issue details on right half ───────────────────────────
+        // ── Pass 2: Issue details on bottom half ──────────────────────────
         doc.addPage({ size: [W, H], margin: 0 });
-        drawBorder(OX);
+        drawBorder(OY);
 
-        const p2FirstLineY = 5.4 * CM;
+        const p2FirstLineY = OY + 5.4 * CM;
         const p2LineSpacing = 1.0 * CM;
 
         const issueValues: string[] = [
@@ -464,7 +469,7 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
             p2CurrentY += p2LineSpacing;
             return;
           }
-          writeValue(value, OX + VPAD, p2CurrentY, valueWidth);
+          writeValue(value, VPAD, p2CurrentY, valueWidth);
         });
       }
 
