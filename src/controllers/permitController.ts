@@ -1,5 +1,7 @@
 import { Response } from 'express';
 import PDFDocument from 'pdfkit';
+import fs from 'fs';
+import path from 'path';
 import prisma from '../config/database';
 import { AuthenticatedRequest } from '../types';
 import { generateRef, generateMRZ } from '../utils/helpers';
@@ -257,10 +259,16 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
           try {
             doc.save();
             doc.rect(photoX, photoY, photoW, photoH).clip();
-            doc.image(photoBuffer, photoX, photoY, { width: photoW, height: photoH, cover: [photoW, photoH] });
+            doc.image(photoBuffer, photoX, photoY, {
+              width: photoW,
+              height: photoH,
+              cover: [photoW, photoH],
+            });
             doc.restore();
             return;
-          } catch { /* fall through to placeholder */ }
+          } catch {
+            /* fall through to placeholder */
+          }
         }
 
         // Placeholder when no photo is available
