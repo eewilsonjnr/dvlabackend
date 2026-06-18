@@ -209,15 +209,13 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
       }
     }
 
-    // Physical page dimensions (1cm = 28.346pt)
-    // IDP: booklet inserted vertically → portrait 12.5cm × 17.6cm
-    //   Top half (y: 0 → PH) is blank (facing-down page), bottom half printed.
-    // ICMV: single page 8.8cm × 12.5cm
+    // Physical booklet page: 8.8cm × 12.5cm (1cm = 28.346pt)
+    // IDP: two separate PDF pages, one per print pass.
+    // ICMV: single page.
     const CM = 28.346;
-    const PH = 8.8 * CM; // single booklet page height
-    const PW = 12.5 * CM; // single booklet page width (becomes doc width in portrait)
-    const W = PW;
-    const H = permit.permitType === 'IDP' ? PH * 2 : PH; // portrait spread for IDP
+    const PH = 8.8 * CM; // kept for drawBorder compatibility
+    const W = 8.8 * CM;
+    const H = 12.5 * CM;
 
     const doc = new PDFDocument({
       size: [W, H],
@@ -239,11 +237,9 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
       const PAD = 0.55 * CM;
       const VPAD = 3.4 * CM;
 
-      // For IDP portrait spread: top half (y:0→PH) blank, bottom half (y:PH→2×PH) printed.
-      // drawBorder draws the border of the printed booklet page at the given y offset.
-      const drawBorder = (offsetY = 0) =>
+      const drawBorder = () =>
         doc
-          .rect(0.5, offsetY + 0.5, W - 1, PH - 1)
+          .rect(0.5, 0.5, W - 1, H - 1)
           .strokeColor('#CCCCCC')
           .lineWidth(0.5)
           .stroke();
@@ -399,24 +395,24 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
         // ══════════════════════════════════════════════════════════════════════
         // IDP — two print passes, booklet inserted vertically (portrait).
         // Each PDF page is 12.5cm wide × 17.6cm tall.
-        // Top half (y: 0 → PH) is blank (facing-down page).
-        // Content prints on BOTTOM half (y: PH → 2×PH) only.
+        // Content is rotated 180° so it prints upside-down; when the booklet
+        // is flipped after printing it reads correctly (landscape orientation).
+        // The printable area is the TOP half in rotated coordinates (y: 0 → PH).
         //
-        // Pass 1 (page 1): bottom half = driver particulars (photo, name, DOB…)
-        // Pass 2 (page 2): bottom half = issue details (place, dates, class…)
+        // Pass 1 (page 1): driver particulars
+        // Pass 2 (page 2): issue details
         // ══════════════════════════════════════════════════════════════════════
 
-        // Content y-offset = PH (bottom half of portrait spread)
-        const OY = PH;
         const valueWidth = W - VPAD - PAD;
 
-        // ── Pass 1: Driver particulars on bottom half ──────────────────────
-        drawBorder(OY);
+        // Helper: rotate page 180° around its centre, draw content, restore
+        // ── Pass 1: Driver particulars ─────────────────────────────────────
+        drawBorder();
 
         const photoW = 3.8 * CM;
         const photoH = 4.7 * CM;
-        const photoX = (W - photoW) / 2; // centred horizontally
-        const photoY = OY + 1.6 * CM; // 1.6cm from top of printed area
+        const photoX = (W - photoW) / 2;
+        const photoY = 1.6 * CM;
         drawPhoto(photoX, photoY, photoW, photoH);
 
         const firstLineY = photoY + photoH + 0.4 * CM;
@@ -444,11 +440,11 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
           writeValue(value, VPAD, currentY, valueWidth);
         });
 
-        // ── Pass 2: Issue details on bottom half ──────────────────────────
+        // ── Pass 2: Issue details ──────────────────────────────────────────
         doc.addPage({ size: [W, H], margin: 0 });
-        drawBorder(OY);
+        drawBorder();
 
-        const p2FirstLineY = OY + 5.4 * CM;
+        const p2FirstLineY = 5.4 * CM;
         const p2LineSpacing = 1.0 * CM;
 
         const issueValues: string[] = [
