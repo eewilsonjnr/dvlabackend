@@ -200,12 +200,20 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
     if (applicant.photoUrl?.startsWith('/uploads/')) {
       const key = applicant.photoUrl.replace(/^\/uploads\//, '');
       photoBuffer = await getObjectBuffer(key).catch(() => null);
+      // Fallback to local filesystem if object storage returns nothing
+      if (!photoBuffer) {
+        const localPath = path.join(__dirname, '..', '..', applicant.photoUrl);
+        if (fs.existsSync(localPath)) photoBuffer = fs.readFileSync(localPath);
+      }
     }
 
-    // Physical page: 8.8cm × 12.5cm  (1cm = 28.346pt)
+    // Physical page dimensions (1cm = 28.346pt)
+    // IDP: booklet opened flat → single spread 17.6cm × 12.5cm (two 8.8cm halves)
+    // ICMV: single page 8.8cm × 12.5cm
     const CM = 28.346;
-    const W = 8.8 * CM;
-    const H = 12.5 * CM;
+    const PW = 8.8 * CM; // single page width
+    const H = 12.5 * CM; // page height
+    const W = permit.permitType === 'IDP' ? PW * 2 : PW; // spread for IDP
 
     const doc = new PDFDocument({
       size: [W, H],
@@ -227,9 +235,10 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
       const PAD = 0.55 * CM;
       const VPAD = 3.4 * CM;
 
-      const drawBorder = () =>
+      // For IDP spread: left half starts at x=0, right half starts at x=PW
+      const drawBorder = (offsetX = 0) =>
         doc
-          .rect(0.5, 0.5, W - 1, H - 1)
+          .rect(offsetX + 0.5, 0.5, PW - 1, H - 1)
           .strokeColor('#CCCCCC')
           .lineWidth(0.5)
           .stroke();
@@ -244,19 +253,27 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
       };
 
       const drawPhoto = (photoX: number, photoY: number, photoW: number, photoH: number) => {
-        if (!photoBuffer) return;
-        try {
-          doc.save();
-          doc.rect(photoX, photoY, photoW, photoH).clip();
-          doc.image(photoBuffer, photoX, photoY, {
-            width: photoW,
-            height: photoH,
-            cover: [photoW, photoH],
-          });
-          doc.restore();
-        } catch {
-          /* ignore bad image */
+        if (photoBuffer) {
+          try {
+            doc.save();
+            doc.rect(photoX, photoY, photoW, photoH).clip();
+            doc.image(photoBuffer, photoX, photoY, { width: photoW, height: photoH, cover: [photoW, photoH] });
+            doc.restore();
+            return;
+          } catch { /* fall through to placeholder */ }
         }
+
+        // Placeholder when no photo is available
+        doc.rect(photoX, photoY, photoW, photoH).fillAndStroke('#E8E8E8', '#AAAAAA');
+        doc
+          .fillColor('#999999')
+          .fontSize(7)
+          .font('Helvetica')
+          .text('PHOTO', photoX, photoY + photoH / 2 - 4, {
+            width: photoW,
+            align: 'center',
+            lineBreak: false,
+          });
       };
 
       if (permit.permitType === 'ICMV') {
@@ -366,22 +383,26 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
             .text(num, iNUM_X, y, { width: iNUM_W, align: 'right', lineBreak: false });
         });
 
-        // ICMV is a single-page document — no page 2
+        // ICMV is a single-page document
       } else {
         // ══════════════════════════════════════════════════════════════════════
-        // IDP — PAGE 1 — Particulars Concerning the Driver
+        // IDP — single spread 17.6cm × 12.5cm
+        // Left half  (x: 0   → PW): Page 1 — Particulars Concerning the Driver
+        // Right half (x: PW  → 2×PW): Page 2 — Issue of Permit
         // ══════════════════════════════════════════════════════════════════════
-        drawBorder();
+
+        // ── Left half: Page 1 ─────────────────────────────────────────────
+        drawBorder(0);
 
         const photoW = 3.8 * CM;
         const photoH = 4.7 * CM;
-        const photoX = (W - photoW) / 2;
+        const photoX = (PW - photoW) / 2; // centred within left half
         const photoY = 1.6 * CM;
         drawPhoto(photoX, photoY, photoW, photoH);
 
         const firstLineY = photoY + photoH + 0.4 * CM;
         const lineSpacing = 0.6 * CM;
-        const valueWidth = W - VPAD - PAD;
+        const valueWidth = PW - VPAD - PAD;
 
         const values = [
           applicant.surname.toUpperCase(),
@@ -405,13 +426,13 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
           writeValue(value, VPAD, currentY, valueWidth);
         });
 
-        // ── IDP PAGE 2 — Issue of Permit ────────────────────────────────────
-        doc.addPage({ size: [W, H], margin: 0 });
-        drawBorder();
+        // ── Right half: Page 2 ────────────────────────────────────────────
+        const OX = PW; // x offset for right half
+        drawBorder(OX);
 
         const p2FirstLineY = 5.4 * CM;
         const p2LineSpacing = 1.0 * CM;
-        const p2ValueWidth = W - VPAD - PAD;
+        const p2ValueWidth = PW - VPAD - PAD;
 
         const issueValues: string[] = [
           permit.placeOfIssue ?? '',
@@ -431,7 +452,7 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
             p2CurrentY += p2LineSpacing;
             return;
           }
-          writeValue(value, VPAD, p2CurrentY, p2ValueWidth);
+          writeValue(value, OX + VPAD, p2CurrentY, p2ValueWidth);
         });
       }
 
