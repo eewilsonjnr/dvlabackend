@@ -394,23 +394,28 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
         // ICMV is a single-page document
       } else {
         // ══════════════════════════════════════════════════════════════════════
-        // IDP — single spread 17.6cm × 12.5cm
-        // Left half  (x: 0   → PW): Page 1 — Particulars Concerning the Driver
-        // Right half (x: PW  → 2×PW): Page 2 — Issue of Permit
+        // IDP — two print passes, each on an opened spread (17.6cm × 12.5cm)
+        // Each pass: left half is blank, content prints on RIGHT half only.
+        //
+        // Pass 1 (page 1): right half = driver particulars (photo, name, DOB…)
+        // Pass 2 (page 2): right half = issue details (place, dates, class…)
         // ══════════════════════════════════════════════════════════════════════
 
-        // ── Left half: Page 1 ─────────────────────────────────────────────
-        drawBorder(0);
+        // Content always starts at PW (right half offset)
+        const OX = PW;
+        const valueWidth = PW - VPAD - PAD;
+
+        // ── Pass 1: Driver particulars on right half ───────────────────────
+        drawBorder(OX);
 
         const photoW = 3.8 * CM;
         const photoH = 4.7 * CM;
-        const photoX = (PW - photoW) / 2; // centred within left half
+        const photoX = OX + (PW - photoW) / 2; // centred within right half
         const photoY = 1.6 * CM;
         drawPhoto(photoX, photoY, photoW, photoH);
 
         const firstLineY = photoY + photoH + 0.4 * CM;
         const lineSpacing = 0.6 * CM;
-        const valueWidth = PW - VPAD - PAD;
 
         const values = [
           applicant.surname.toUpperCase(),
@@ -431,16 +436,15 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
             currentY += lineSpacing;
             return;
           }
-          writeValue(value, VPAD, currentY, valueWidth);
+          writeValue(value, OX + VPAD, currentY, valueWidth);
         });
 
-        // ── Right half: Page 2 ────────────────────────────────────────────
-        const OX = PW; // x offset for right half
+        // ── Pass 2: Issue details on right half ───────────────────────────
+        doc.addPage({ size: [W, H], margin: 0 });
         drawBorder(OX);
 
         const p2FirstLineY = 5.4 * CM;
         const p2LineSpacing = 1.0 * CM;
-        const p2ValueWidth = PW - VPAD - PAD;
 
         const issueValues: string[] = [
           permit.placeOfIssue ?? '',
@@ -460,7 +464,7 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
             p2CurrentY += p2LineSpacing;
             return;
           }
-          writeValue(value, OX + VPAD, p2CurrentY, p2ValueWidth);
+          writeValue(value, OX + VPAD, p2CurrentY, valueWidth);
         });
       }
 
