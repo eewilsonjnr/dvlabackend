@@ -2,8 +2,9 @@ name: CI/CD pre-live (Hetzner)
 
 # Builds ON the Hetzner box via a self-hosted runner (GitHub-hosted runners are
 # over quota; self-hosted minutes are free).
-#   - pull_request -> `build` job validates the image compiles (gates merges)
-#   - push to master / manual -> `deploy` job builds + redeploys on the box
+#   - pull_request -> `build` job validates the image compiles (visible merge signal)
+#   - push to master / manual -> `deploy` job builds + redeploys on the box,
+#     and auto-rolls-back to the last-good image if the health check fails.
 
 on:
   push:
@@ -17,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Merge gate: only builds the image, never touches the running stack.
+  # Merge signal: only builds the image, never touches the running stack.
   build:
     name: build
     if: github.event_name == 'pull_request'
@@ -57,11 +58,25 @@ jobs:
       - name: Sync compose file (Caddyfile is left untouched — it holds the basic-auth hash)
         run: cp ./deploy/docker-compose.yml /opt/dvla/docker-compose.yml
 
+      - name: Capture current image (for rollback)
+        id: prev
+        working-directory: /opt/dvla
+        run: |
+          CID=$(docker compose ps -q backend 2>/dev/null || true)
+          if [ -n "$CID" ]; then
+            echo "sha=$(docker inspect --format '{{.Image}}' "$CID")" >> "$GITHUB_OUTPUT"
+            echo "ref=$(docker inspect --format '{{.Config.Image}}' "$CID")" >> "$GITHUB_OUTPUT"
+            echo "captured last-good image for rollback"
+          else
+            echo "no running backend container yet (first deploy)"
+          fi
+
       - name: Build & deploy backend (migrations auto-apply via entrypoint)
         working-directory: /opt/dvla
         run: docker compose up -d --build backend
 
-      - name: Health check
+      - name: Health check (auto-rollback on failure)
+        working-directory: /opt/dvla
         run: |
           for i in $(seq 1 30); do
             if curl -fsS --max-time 10 https://api.dvla.3dt.com.gh/health >/dev/null 2>&1; then
@@ -69,7 +84,17 @@ jobs:
             fi
             echo "waiting for backend... ($i)"; sleep 3
           done
-          echo "❌ backend health check failed"; cd /opt/dvla && docker compose logs backend --tail=60; exit 1
+          echo "❌ health check failed — rolling back to last-good image"
+          docker compose logs backend --tail=60 || true
+          SHA="${{ steps.prev.outputs.sha }}"; REF="${{ steps.prev.outputs.ref }}"
+          if [ -n "$SHA" ] && [ -n "$REF" ]; then
+            docker tag "$SHA" "$REF"
+            docker compose up -d --no-build backend
+            echo "↩️ rolled back to previous image ($SHA); pre-live stays on last-good version"
+          else
+            echo "no previous image captured — cannot roll back automatically"
+          fi
+          exit 1
 
       - name: Prune dangling images
         if: always()
