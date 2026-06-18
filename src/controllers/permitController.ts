@@ -138,11 +138,18 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
       Author: 'DVLA Ghana',
     }});
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${permit.referenceNumber}.pdf"`);
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    doc.pipe(res);
+    // Collect PDF into buffer first — required for Vercel serverless (no streaming)
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => {
+      const pdf = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${permit.referenceNumber}.pdf"`);
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Content-Length', pdf.length);
+      res.end(pdf);
+    });
 
     const PAD   = 0.55 * CM;
     const VPAD  = 3.4  * CM;
