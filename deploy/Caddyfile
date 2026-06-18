@@ -23,3 +23,9 @@ mail.dvla.3dt.com.gh {
 	}
 	reverse_proxy mailpit:8025
 }
+
+# MinIO console (object storage admin UI). MinIO has its own root login; the
+# S3 API (:9000) is never exposed — only the backend reaches it internally.
+files.dvla.3dt.com.gh {
+	reverse_proxy minio:9001
+}

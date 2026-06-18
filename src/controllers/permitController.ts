@@ -1,11 +1,10 @@
 import { Response } from 'express';
 import PDFDocument from 'pdfkit';
-import fs from 'fs';
-import path from 'path';
 import prisma from '../config/database';
 import { AuthenticatedRequest } from '../types';
 import { generateRef, generateMRZ } from '../utils/helpers';
 import { resolveScope, permitOfficeWhere } from '../utils/scopeFilter';
+import { getObjectBuffer } from '../config/storage';
 
 export async function listPermits(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
@@ -195,6 +194,14 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
 
     const { applicant } = permit;
 
+    // Fetch the applicant photo from object storage up front (async) so the
+    // synchronous PDF drawing below can embed it from a buffer.
+    let photoBuffer: Buffer | null = null;
+    if (applicant.photoUrl?.startsWith('/uploads/')) {
+      const key = applicant.photoUrl.replace(/^\/uploads\//, '');
+      photoBuffer = await getObjectBuffer(key).catch(() => null);
+    }
+
     // Physical page: 8.8cm × 12.5cm  (1cm = 28.346pt)
     const CM = 28.346;
     const W = 8.8 * CM;
@@ -237,22 +244,18 @@ export async function previewPermit(req: AuthenticatedRequest, res: Response): P
       };
 
       const drawPhoto = (photoX: number, photoY: number, photoW: number, photoH: number) => {
-        if (!applicant.photoUrl) return;
-        const photoPath = applicant.photoUrl.startsWith('/uploads')
-          ? path.join(__dirname, '..', '..', applicant.photoUrl)
-          : null;
-        if (!photoPath || !fs.existsSync(photoPath)) return;
+        if (!photoBuffer) return;
         try {
           doc.save();
           doc.rect(photoX, photoY, photoW, photoH).clip();
-          doc.image(photoPath, photoX, photoY, {
+          doc.image(photoBuffer, photoX, photoY, {
             width: photoW,
             height: photoH,
             cover: [photoW, photoH],
           });
           doc.restore();
         } catch {
-          /* ignore missing image */
+          /* ignore bad image */
         }
       };
 

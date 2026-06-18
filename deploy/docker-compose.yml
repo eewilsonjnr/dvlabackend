@@ -70,6 +70,20 @@ services:
     networks:
       - dvla
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # External console URL (behind Caddy) so redirects resolve correctly.
+      MINIO_BROWSER_REDIRECT_URL: https://files.dvla.3dt.com.gh
+    volumes:
+      - minio_data:/data
+    networks:
+      - dvla
+
   backend:
     build:
       context: ./backend
@@ -87,11 +101,18 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
-    volumes:
-      - uploads:/app/uploads
+      # Object storage (MinIO, internal only) — app uploads live here.
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: '9000'
+      MINIO_USE_SSL: 'false'
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
     networks:
       - dvla
 
@@ -119,4 +140,4 @@ volumes:
   mailpit_data:
   caddy_data:
   caddy_config:
-  uploads:
+  minio_data:
